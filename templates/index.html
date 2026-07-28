@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drowsiness Monitor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;700;800&display=swap');
+
+:root {
+  --bg:      #07090d;
+  --panel:   #0c1018;
+  --card:    #101520;
+  --border:  #1c2535;
+  --text:    #c4d4e4;
+  --muted:   #3d5268;
+  --cyan:    #00e5ff;
+  --green:   #00e676;
+  --amber:   #ffab40;
+  --red:     #ff1744;
+  --blue:    #448aff;
+  --purple:  #b388ff;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;overflow-x:hidden}
+
+/* ── HEADER ── */
+header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 24px;background:var(--panel);
+  border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;
+}
+.logo{display:flex;align-items:center;gap:10px;font-size:1rem;font-weight:800;letter-spacing:.05em;color:var(--cyan)}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 1.8s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(1.5)}}
+.header-right{display:flex;align-items:center;gap:12px}
+#clock{font-family:'JetBrains Mono',monospace;font-size:.75rem;color:var(--muted)}
+.live-badge{background:rgba(0,230,118,.1);border:1px solid rgba(0,230,118,.25);color:var(--green);
+  font-size:.65rem;font-weight:700;padding:3px 9px;border-radius:20px;letter-spacing:.12em;
+  font-family:'JetBrains Mono',monospace}
+
+/* ── LAYOUT ── */
+.main-grid{display:grid;grid-template-columns:1fr 320px;min-height:calc(100vh - 50px)}
+.left-col{border-right:1px solid var(--border);display:flex;flex-direction:column}
+.right-col{display:flex;flex-direction:column;overflow-y:auto}
+
+/* ── VIDEO ── */
+.video-wrap{position:relative;background:#000;flex:0 0 auto;aspect-ratio:4/3;max-height:55vh}
+.video-wrap img{width:100%;height:100%;object-fit:contain;display:block}
+.alert-ring{position:absolute;inset:0;pointer-events:none;border:3px solid transparent;transition:all .2s}
+.alert-ring.l1{border-color:rgba(0,229,255,.5)}
+.alert-ring.l2{border-color:rgba(255,171,64,.7);box-shadow:inset 0 0 30px rgba(255,171,64,.08)}
+.alert-ring.l3{border-color:var(--red);box-shadow:inset 0 0 40px rgba(255,23,68,.12);animation:flash .4s step-end infinite}
+@keyframes flash{50%{box-shadow:inset 0 0 50px rgba(255,23,68,.25)}}
+
+/* ── GRAPHS SECTION ── */
+.graphs-section{flex:1;padding:16px 20px;display:flex;flex-direction:column;gap:14px}
+.graph-title{font-size:.6rem;font-weight:700;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:6px}
+.chart-wrap{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px}
+canvas{display:block}
+
+/* ── SIDEBAR ── */
+.alert-banner{
+  padding:12px 16px;font-size:.8rem;font-weight:700;letter-spacing:.06em;
+  text-align:center;min-height:42px;display:flex;align-items:center;
+  justify-content:center;gap:8px;border-bottom:1px solid var(--border);transition:all .3s
+}
+.alert-banner.ok{background:rgba(0,230,118,.07);color:var(--green)}
+.alert-banner.l1{background:rgba(0,229,255,.09);color:var(--cyan)}
+.alert-banner.l2{background:rgba(255,171,64,.1);color:var(--amber)}
+.alert-banner.l3{background:rgba(255,23,68,.14);color:var(--red);animation:bgp .5s ease-in-out infinite alternate}
+@keyframes bgp{to{background:rgba(255,23,68,.26)}}
+
+.section{padding:14px 16px;border-bottom:1px solid var(--border)}
+.sec-title{font-size:.6rem;font-weight:700;letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin-bottom:10px}
+
+/* ── METRIC BARS ── */
+.metric{margin-bottom:10px}
+.metric-head{display:flex;justify-content:space-between;margin-bottom:4px;
+  font-family:'JetBrains Mono',monospace;font-size:.68rem}
+.metric-label{color:var(--muted)}
+.metric-val{font-weight:700}
+.bar-track{background:#0a1018;border-radius:4px;height:6px;overflow:hidden;border:1px solid var(--border)}
+.bar-fill{height:100%;border-radius:4px;transition:width .3s ease,background .3s}
+
+/* ── CALIBRATION CARD ── */
+.cal-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px}
+.cal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.cal-status{font-family:'JetBrains Mono',monospace;font-size:.68rem}
+.cal-status.idle{color:var(--muted)}
+.cal-status.running{color:var(--amber)}
+.cal-status.done{color:var(--green)}
+.cal-progress-track{background:#0a1018;border-radius:4px;height:8px;overflow:hidden;
+  border:1px solid var(--border);margin-bottom:10px;display:none}
+.cal-progress-fill{height:100%;background:linear-gradient(90deg,var(--green),var(--cyan));
+  border-radius:4px;transition:width .3s ease;width:0%}
+.cal-hint{font-size:.68rem;color:var(--muted);margin-bottom:10px}
+.btn{
+  width:100%;padding:9px 12px;border:none;border-radius:8px;cursor:pointer;
+  font-family:'Syne',sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.05em;
+  transition:all .2s
+}
+.btn-cal{background:rgba(0,229,255,.12);color:var(--cyan);border:1px solid rgba(0,229,255,.25)}
+.btn-cal:hover{background:rgba(0,229,255,.22)}
+.btn-cal:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── STAT GRID ── */
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat-box{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+.stat-lbl{font-size:.58rem;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;
+  margin-bottom:3px;font-family:'JetBrains Mono',monospace}
+.stat-val{font-size:1.5rem;font-weight:800;color:var(--cyan);line-height:1;
+  font-family:'JetBrains Mono',monospace}
+.stat-val.warn{color:var(--amber)}.stat-val.danger{color:var(--red)}
+
+/* ── EVENT LOG ── */
+.event-log{max-height:180px;overflow-y:auto}
+.ev{display:flex;align-items:center;gap:8px;padding:6px 0;
+  border-bottom:1px solid #0c1520;font-size:.68rem;font-family:'JetBrains Mono',monospace;
+  animation:fadeIn .3s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.ev-time{color:var(--muted);min-width:36px}
+.ev-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.dot-ok{background:var(--green)}.dot-l1{background:var(--cyan)}
+.dot-l2{background:var(--amber)}.dot-l3{background:var(--red)}
+.ev-msg{color:var(--text);flex:1}
+
+/* ── FOOTER ── */
+footer{
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;
+  padding:10px 24px;border-top:1px solid var(--border);background:var(--panel);
+  font-size:.68rem;color:var(--muted);font-family:'JetBrains Mono',monospace
+}
+.phone-badge{display:flex;align-items:center;gap:5px}
+.phone-badge-dot{width:5px;height:5px;border-radius:50%;background:var(--green)}
+
+/* ═══════════════════════════════════════════════════
+   MOBILE / PHONE UI  (max-width: 768px)
+   Full-screen phone-optimised layout
+═══════════════════════════════════════════════════ */
+@media (max-width:768px){
+  .main-grid{grid-template-columns:1fr;grid-template-rows:auto}
+  .left-col{border-right:none}
+  .right-col{border-top:1px solid var(--border)}
+  .video-wrap{aspect-ratio:4/3;max-height:56vw}
+  .graphs-section{padding:12px}
+
+  /* Phone notification-style alert */
+  .alert-banner{font-size:.9rem;padding:14px;min-height:52px}
+
+  /* Bigger touch-friendly stat boxes on phone */
+  .stat-val{font-size:1.8rem}
+  .btn{padding:12px;font-size:.85rem}
+
+  /* Stack graphs vertically, smaller height */
+  .chart-wrap canvas{max-height:120px}
+
+  /* Floating alert pill at top of phone screen */
+  .phone-alert-pill{
+    display:block;position:fixed;top:56px;left:50%;transform:translateX(-50%);
+    z-index:200;padding:10px 22px;border-radius:30px;font-size:.8rem;font-weight:700;
+    letter-spacing:.05em;text-align:center;min-width:220px;
+    box-shadow:0 4px 20px rgba(0,0,0,.5);transition:all .3s;pointer-events:none;
+    opacity:0;
+  }
+  .phone-alert-pill.visible{opacity:1}
+  .phone-alert-pill.ok{background:#0d2e1a;color:var(--green);border:1px solid rgba(0,230,118,.3)}
+  .phone-alert-pill.l1{background:#0a2535;color:var(--cyan);border:1px solid rgba(0,229,255,.3)}
+  .phone-alert-pill.l2{background:#2e1f0a;color:var(--amber);border:1px solid rgba(255,171,64,.4)}
+  .phone-alert-pill.l3{background:#2e0a0a;color:var(--red);border:1px solid rgba(255,23,68,.5);
+    animation:pillpulse .5s ease-in-out infinite alternate}
+  @keyframes pillpulse{to{background:#450f0f}}
+}
+@media (min-width:769px){.phone-alert-pill{display:none}}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+</style>
+</head>
+<body>
+
+<!-- Floating pill for phone -->
+<div class="phone-alert-pill" id="phonePill">● Driver Alert</div>
+
+<header>
+  <div class="logo"><div class="live-dot"></div>DROWSINESS MONITOR</div>
+  <div class="header-right">
+    <span id="clock"></span>
+    <span class="live-badge">● LIVE</span>
+  </div>
+</header>
+
+<div class="main-grid">
+
+  <!-- ── LEFT COLUMN ── -->
+  <div class="left-col">
+
+    <!-- Camera feed -->
+    <div class="video-wrap">
+      <img src="/video_feed" alt="Camera feed" id="camFeed">
+      <div class="alert-ring" id="alertRing"></div>
+    </div>
+
+    <!-- Real-time graphs -->
+    <div class="graphs-section">
+
+      <div class="chart-wrap">
+        <div class="graph-title">Eye Aspect Ratio (EAR) — Real-time</div>
+        <canvas id="earChart" height="90"></canvas>
+      </div>
+
+      <div class="chart-wrap">
+        <div class="graph-title">PERCLOS & Alert Level</div>
+        <canvas id="perclosChart" height="90"></canvas>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── RIGHT SIDEBAR ── -->
+  <div class="right-col">
+
+    <!-- Alert banner -->
+    <div class="alert-banner ok" id="banner">✔ Driver Alert — Normal</div>
+
+    <!-- Calibration -->
+    <div class="section">
+      <div class="sec-title">Baseline Calibration</div>
+      <div class="cal-card">
+        <div class="cal-header">
+          <span style="font-size:.72rem;color:var(--text)">Personal thresholds</span>
+          <span class="cal-status idle" id="calStatus">Not calibrated</span>
+        </div>
+        <div class="cal-progress-track" id="calProgressTrack">
+          <div class="cal-progress-fill" id="calProgressFill"></div>
+        </div>
+        <p class="cal-hint" id="calHint">Calibrate once to set EAR/MAR thresholds specific to your face & eyes.</p>
+        <button class="btn btn-cal" id="calBtn" onclick="startCalibration()">▶ Calibrate (15 sec)</button>
+      </div>
+      <div style="display:flex;gap:8px;font-family:'JetBrains Mono',monospace;font-size:.65rem;color:var(--muted)">
+        <span>EAR thresh: <span id="earThresh" style="color:var(--cyan)">0.220</span></span>
+        <span>·</span>
+        <span>MAR thresh: <span id="marThresh" style="color:var(--cyan)">0.600</span></span>
+      </div>
+    </div>
+
+    <!-- Metric bars -->
+    <div class="section">
+      <div class="sec-title">Live Biometrics</div>
+
+      <div class="metric">
+        <div class="metric-head">
+          <span class="metric-label">EAR — Eye Aspect Ratio</span>
+          <span class="metric-val" id="earVal" style="color:var(--green)">—</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill" id="earBar" style="width:0%;background:var(--green)"></div></div>
+      </div>
+
+      <div class="metric">
+        <div class="metric-head">
+          <span class="metric-label">MAR — Mouth (Yawn)</span>
+          <span class="metric-val" id="marVal" style="color:var(--green)">—</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill" id="marBar" style="width:0%;background:var(--green)"></div></div>
+      </div>
+
+      <div class="metric">
+        <div class="metric-head">
+          <span class="metric-label">PERCLOS — 60s window</span>
+          <span class="metric-val" id="percVal" style="color:var(--green)">—</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill" id="percBar" style="width:0%;background:var(--green)"></div></div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="section">
+      <div class="sec-title">Session Stats</div>
+      <div class="stat-grid">
+        <div class="stat-box"><div class="stat-lbl">Blinks/min</div><div class="stat-val" id="blinkRate">0</div></div>
+        <div class="stat-box"><div class="stat-lbl">Total Yawns</div><div class="stat-val" id="yawns">0</div></div>
+        <div class="stat-box"><div class="stat-lbl">Total Blinks</div><div class="stat-val" id="blinks">0</div></div>
+        <div class="stat-box"><div class="stat-lbl">Session</div><div class="stat-val" id="elapsed" style="font-size:1rem">0:00</div></div>
+      </div>
+    </div>
+
+    <!-- Event log -->
+    <div class="section" style="flex:1;border-bottom:none">
+      <div class="sec-title">Event Log</div>
+      <div class="event-log" id="evLog"></div>
+    </div>
+
+  </div>
+</div>
+
+<footer>
+  <span id="faceStatus">👁 Scanning...</span>
+  <div class="phone-badge"><div class="phone-badge-dot"></div><span>Telegram alerts active</span></div>
+  <span id="calFooter">Thresholds: default</span>
+</footer>
+
+<script>
+// ─── Chart setup ────────────────────────────────────────────────────────────
+Chart.defaults.color = '#3d5268';
+Chart.defaults.borderColor = '#1c2535';
+
+const MAX_POINTS = 150;
+
+function makeChart(id, datasets, yMax=1, yMin=0) {
+  return new Chart(document.getElementById(id), {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: datasets
+    },
+    options: {
+      responsive: true,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: true, labels: { boxWidth: 10, font: { size: 10, family: 'JetBrains Mono' } } } },
+      scales: {
+        x: { ticks: { maxTicksLimit: 6, font: { size: 9, family: 'JetBrains Mono' } }, grid: { color: '#111c28' } },
+        y: { min: yMin, max: yMax, ticks: { font: { size: 9, family: 'JetBrains Mono' } }, grid: { color: '#111c28' } }
+      }
+    }
+  });
+}
+
+// EAR chart
+const earChart = makeChart('earChart', [
+  { label: 'EAR', data: [], borderColor: '#00e5ff', backgroundColor: 'rgba(0,229,255,.06)',
+    borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: true },
+  { label: 'Threshold', data: [], borderColor: 'rgba(255,23,68,.6)',
+    borderWidth: 1, pointRadius: 0, borderDash: [4,3], fill: false }
+], 0.5, 0);
+
+// PERCLOS + alert chart
+const percChart = makeChart('perclosChart', [
+  { label: 'PERCLOS', data: [], borderColor: '#b388ff', backgroundColor: 'rgba(179,136,255,.06)',
+    borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: true },
+  { label: 'Alert Lvl', data: [], borderColor: '#ffab40', backgroundColor: 'rgba(255,171,64,.06)',
+    borderWidth: 1.5, pointRadius: 0, tension: 0.2, fill: false, yAxisID: 'y2' }
+], 1.0, 0);
+
+// Add second y-axis for alert level
+percChart.options.scales.y2 = {
+  min: 0, max: 3, position: 'right',
+  ticks: { stepSize: 1, font: { size: 9, family: 'JetBrains Mono' } },
+  grid: { drawOnChartArea: false }
+};
+percChart.update();
+
+function pushGraph(chart, labels, ...seriesData) {
+  chart.data.labels = labels;
+  seriesData.forEach((d, i) => { chart.data.datasets[i].data = d; });
+  chart.update('none');
+}
+
+// ─── State ──────────────────────────────────────────────────────────────────
+let lastAlertLevel = 0;
+let lastYawns      = 0;
+const BANNER_CFG = [
+  { cls:'ok', txt:'✔ Driver Alert — Normal' },
+  { cls:'l1', txt:'⚠ MILD — Eyes closing' },
+  { cls:'l2', txt:'⚠ MODERATE — Drowsiness detected' },
+  { cls:'l3', txt:'🚨 SEVERE — Please pull over!' },
+];
+
+function fmt(s) { return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; }
+
+function setBar(barId, valId, val, max, threshold, highIsBad) {
+  const pct = Math.min(val/max, 1)*100;
+  const bad = highIsBad ? val>threshold : val<threshold;
+  const col = bad ? (Math.abs(val-threshold) > threshold*0.3 ? 'var(--red)' : 'var(--amber)') : 'var(--green)';
+  document.getElementById(barId).style.width  = pct+'%';
+  document.getElementById(barId).style.background = col;
+  document.getElementById(valId).textContent  = val.toFixed(3);
+  document.getElementById(valId).style.color  = col;
+}
+
+function addEvent(level, msg) {
+  const log = document.getElementById('evLog');
+  const now = new Date();
+  const ts  = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  const dotMap = ['dot-ok','dot-l1','dot-l2','dot-l3'];
+  const div = document.createElement('div');
+  div.className = 'ev';
+  div.innerHTML = `<span class="ev-time">${ts}</span><div class="ev-dot ${dotMap[level]||'dot-ok'}"></div><span class="ev-msg">${msg}</span>`;
+  log.insertBefore(div, log.firstChild);
+  if (log.children.length > 50) log.removeChild(log.lastChild);
+}
+
+// ─── Calibration ────────────────────────────────────────────────────────────
+let calPolling = null;
+
+async function startCalibration() {
+  document.getElementById('calBtn').disabled = true;
+  document.getElementById('calBtn').textContent = '⏳ Calibrating...';
+  document.getElementById('calProgressTrack').style.display = 'block';
+  document.getElementById('calStatus').textContent = 'Running...';
+  document.getElementById('calStatus').className = 'cal-status running';
+  document.getElementById('calHint').textContent = 'Keep your eyes open and look normally at the camera.';
+  addEvent(0, 'Calibration started — 15 seconds');
+
+  await fetch('/calibrate', { method: 'POST' });
+
+  calPolling = setInterval(pollCalibration, 500);
+}
+
+async function pollCalibration() {
+  const r = await fetch('/cal_status');
+  const d = await r.json();
+
+  document.getElementById('calProgressFill').style.width = d.progress + '%';
+
+  if (d.status === 'done') {
+    clearInterval(calPolling);
+    document.getElementById('calStatus').textContent = '✓ Calibrated';
+    document.getElementById('calStatus').className   = 'cal-status done';
+    document.getElementById('calBtn').textContent    = '✓ Re-calibrate';
+    document.getElementById('calBtn').disabled       = false;
+    document.getElementById('calHint').textContent   = `Personal thresholds set! EAR: ${d.ear_threshold}, MAR: ${d.mar_threshold}`;
+    document.getElementById('calProgressTrack').style.display = 'none';
+    document.getElementById('calFooter').textContent = `Thresholds: personal (EAR ${d.ear_threshold}, MAR ${d.mar_threshold})`;
+    addEvent(0, `Calibration done — EAR: ${d.ear_threshold}, MAR: ${d.mar_threshold}`);
+  } else if (d.status === 'failed') {
+    clearInterval(calPolling);
+    document.getElementById('calStatus').textContent = '✗ Failed';
+    document.getElementById('calStatus').className   = 'cal-status idle';
+    document.getElementById('calBtn').textContent    = '▶ Try Again';
+    document.getElementById('calBtn').disabled       = false;
+    document.getElementById('calHint').textContent   = 'Not enough samples. Make sure face is visible and try again.';
+    addEvent(1, 'Calibration failed — using defaults');
+  }
+}
+
+// ─── Stats polling ───────────────────────────────────────────────────────────
+async function fetchStats() {
+  try {
+    const r = await fetch('/stats');
+    const d = await r.json();
+
+    const et = d.ear_threshold || 0.22;
+    const mt = d.mar_threshold || 0.60;
+
+    setBar('earBar', 'earVal', d.ear, 0.45, et, false);
+    setBar('marBar', 'marVal', d.mar, 1.0,  mt, true);
+    setBar('percBar','percVal',d.perclos, 1.0, 0.35, true);
+
+    document.getElementById('blinkRate').textContent = d.blink_rate;
+    document.getElementById('yawns').textContent     = d.total_yawns;
+    document.getElementById('blinks').textContent    = d.total_blinks;
+    document.getElementById('elapsed').textContent   = fmt(d.elapsed);
+    document.getElementById('earThresh').textContent = et.toFixed(3);
+    document.getElementById('marThresh').textContent = mt.toFixed(3);
+
+    // Alert level
+    const lvl    = d.alert_level;
+    const ring   = document.getElementById('alertRing');
+    const banner = document.getElementById('banner');
+    const pill   = document.getElementById('phonePill');
+
+    ring.className = 'alert-ring ' + (lvl > 0 ? 'l'+lvl : '');
+
+    if (lvl !== lastAlertLevel) {
+      if (lvl > 0) addEvent(lvl, BANNER_CFG[lvl].txt);
+      lastAlertLevel = lvl;
+    }
+
+    const cfg = BANNER_CFG[lvl] || BANNER_CFG[0];
+    banner.className   = 'alert-banner ' + cfg.cls;
+    banner.textContent = cfg.txt;
+
+    // Phone pill
+    pill.className   = 'phone-alert-pill visible ' + cfg.cls;
+    pill.textContent = cfg.txt;
+
+    // Yawn event log
+    if (d.total_yawns > lastYawns) {
+      addEvent(1, `Yawn detected (total: ${d.total_yawns})`);
+      lastYawns = d.total_yawns;
+    }
+
+    // Face status
+    document.getElementById('faceStatus').textContent =
+      d.face ? '👁 Face detected — Monitoring' : '⚠ No face detected';
+
+    // Yawn stat color
+    const yEl = document.getElementById('yawns');
+    yEl.className = 'stat-val' + (d.total_yawns>=5?' danger':d.total_yawns>=2?' warn':'');
+
+    // Calibration footer sync
+    if (d.calibrated && !calPolling) {
+      document.getElementById('calStatus').textContent = '✓ Calibrated';
+      document.getElementById('calStatus').className   = 'cal-status done';
+      document.getElementById('calBtn').textContent    = '✓ Re-calibrate';
+    }
+
+  } catch(e) { console.error(e); }
+}
+
+// ─── Graph polling ───────────────────────────────────────────────────────────
+async function fetchGraphs() {
+  try {
+    const r = await fetch('/graph_data');
+    const d = await r.json();
+
+    const labels = d.times.map(t => t + 's');
+    const earThr = d.times.map(() => d.ear_threshold);
+
+    pushGraph(earChart, labels, d.ear, earThr);
+    pushGraph(percChart, labels, d.perclos, d.alert.map(v => v/3));  // normalise alert 0-3 → 0-1
+
+  } catch(e) { console.error(e); }
+}
+
+// ─── Clock ───────────────────────────────────────────────────────────────────
+setInterval(() => {
+  const n = new Date();
+  document.getElementById('clock').textContent =
+    n.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}, 1000);
+
+// ─── Start polling ────────────────────────────────────────────────────────────
+setInterval(fetchStats,  800);
+setInterval(fetchGraphs, 2000);
+fetchStats();
+fetchGraphs();
+addEvent(0, 'Session started — monitoring active');
+</script>
+</body>
+</html>
